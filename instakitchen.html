@@ -1,0 +1,1263 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  
+  <!-- iOS PWA 全屏独立运行专属配置 -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="InstaKitchen" />
+  <link rel="apple-touch-icon" href="https://images.unsplash.com/photo-1556910103-1c02745aae4d?auto=format&fit=crop&w=256&q=80" />
+  
+  <title>InstaKitchen 私房菜谱</title>
+  
+  <!-- 引入 Tailwind CSS 与 React 引擎 -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    /* 适配 iPhone 顶部灵动岛安全区与底部横条安全区 */
+    :root {
+      --safe-top: env(safe-area-inset-top, 20px);
+      --safe-bottom: env(safe-area-inset-bottom, 16px);
+    }
+    body {
+      -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;
+      user-select: none;
+      overscroll-behavior-y: none;
+    }
+    .safe-top-pad {
+      padding-top: max(12px, var(--safe-top));
+    }
+    .safe-bottom-pad {
+      padding-bottom: max(12px, var(--safe-bottom));
+    }
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+  </style>
+</head>
+<body class="bg-white text-zinc-900">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo, useRef } = React;
+
+    // 预设工序与火候字典
+    const STEP_STAGES = [
+      { label: '🔪 备菜切配', value: '备菜切配', color: 'bg-slate-500/15 text-slate-600' },
+      { label: '🧂 腌制入味', value: '腌制入味', color: 'bg-amber-500/15 text-amber-600' },
+      { label: '💧 焯水去腥', value: '焯水去腥', color: 'bg-sky-500/15 text-sky-600' },
+      { label: '🔥 热锅爆香', value: '热锅爆香', color: 'bg-orange-500/15 text-orange-600' },
+      { label: '🥄 调味翻炒', value: '调味翻炒', color: 'bg-rose-500/15 text-rose-600' },
+      { label: '🍲 焖煮慢炖', value: '焖煮慢炖', color: 'bg-purple-500/15 text-purple-600' },
+      { label: '✨ 大火收汁', value: '大火收汁', color: 'bg-emerald-500/15 text-emerald-600' }
+    ];
+
+    const HEAT_LEVELS = [
+      { label: '🔥 大火猛炒', value: '大火' },
+      { label: '🍳 中火翻炒', value: '中火' },
+      { label: '🕯️ 小火慢炖', value: '小火' },
+      { label: '❄️ 无需开火', value: '免火' }
+    ];
+
+    const QUICK_SEASONINGS = [
+      { name: '盐', amount: '3克' },
+      { name: '料酒', amount: '1勺(15ml)' },
+      { name: '生抽', amount: '2勺(30ml)' },
+      { name: '老抽', amount: '半勺(7ml)' },
+      { name: '蚝油', amount: '1勺(15ml)' },
+      { name: '白糖', amount: '5克' },
+      { name: '姜片葱段', amount: '适量' },
+      { name: '水淀粉', amount: '2勺' }
+    ];
+
+    const CATEGORIES = [
+      { name: '全部', icon: '✨', img: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=300&q=80' },
+      { name: '快手菜', icon: '⚡', img: 'https://images.unsplash.com/photo-1525351484163-7529414344d8?auto=format&fit=crop&w=300&q=80' },
+      { name: '家常菜', icon: '🏠', img: 'https://images.unsplash.com/photo-1547592180-85f173990554?auto=format&fit=crop&w=300&q=80' },
+      { name: '肉类', icon: '🥩', img: 'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=300&q=80' },
+      { name: '素菜', icon: '🥬', img: 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?auto=format&fit=crop&w=300&q=80' },
+      { name: '汤羹', icon: '🍲', img: 'https://images.unsplash.com/photo-1476718406336-bb5a9690ee2a?auto=format&fit=crop&w=300&q=80' },
+      { name: '甜品', icon: '🍰', img: 'https://images.unsplash.com/photo-1533134242443-d4fd215305ad?auto=format&fit=crop&w=300&q=80' }
+    ];
+
+    const INITIAL_RECIPES = [
+      {
+        id: 'r0',
+        title: '招牌金奖糖醋小排',
+        category: '肉类',
+        prepTime: 35,
+        difficulty: '适中',
+        rating: 5,
+        isFavorite: true,
+        isBookmarked: true,
+        image: 'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=900&q=85',
+        notes: '黄金糖醋比例「1料酒 : 2生抽 : 3白糖 : 4香醋 : 5清水」！排骨一定要冷水下锅焯水，最后大火收汁淋尾醋。',
+        ingredients: [
+          { id: 'i01', name: '猪肋排(精排)', amount: 500, unit: '克' },
+          { id: 'i02', name: '黄冰糖', amount: 45, unit: '克' },
+          { id: 'i03', name: '镇江香醋', amount: 60, unit: '毫升' },
+          { id: 'i04', name: '生抽酱油', amount: 30, unit: '毫升' }
+        ],
+        steps: [
+          {
+            id: 'st01',
+            stage: '焯水去腥',
+            heat: '大火',
+            durationSec: 180,
+            seasonings: ['冷水 没过排骨', '姜片 4片', '料酒 1勺(15ml)'],
+            instruction: '肋排斩小段冷水下锅，放入姜片、葱结并淋入1勺料酒。大火烧开持续煮3分钟撇净浮沫，捞出用温水冲洗沥干。',
+            tip: '切忌用冷水冲洗，否则肉质遇冷紧缩发柴'
+          },
+          {
+            id: 'st02',
+            stage: '调味翻炒',
+            heat: '中火',
+            durationSec: 60,
+            seasonings: ['黄冰糖 45克', '料酒 1勺', '生抽 2勺', '陈醋 3勺'],
+            instruction: '小火炒化冰糖至琥珀枣红色小泡，倒入排骨裹上糖色，沿锅边淋入料酒、生抽与3勺香醋翻炒出香。',
+            tip: '先炒酸、后留酸，香气更有层次'
+          },
+          {
+            id: 'st03',
+            stage: '大火收汁',
+            heat: '大火',
+            durationSec: 90,
+            seasonings: ['开水 500ml', '盐 3克', '锅边尾醋 1勺', '熟白芝麻 5克'],
+            instruction: '冲入开水小火焖20分钟后加盐，转最大火推炒收汁。汤汁浓稠挂在排骨上时淋入最后1勺尾醋，撒白芝麻出锅！',
+            tip: '汤汁起密集大泡即可关火'
+          }
+        ],
+        cookingLogs: [
+          { id: 'log_01', date: '2025-05-14', attempt: 1, rating: 5, note: '收汁沿锅边淋了尾醋，酸甜度完美复刻餐厅水准！', badge: '完美复刻' }
+        ]
+      },
+      {
+        id: 'r1',
+        title: '流心水波蛋牛油果欧包',
+        category: '快手菜',
+        prepTime: 10,
+        difficulty: '简单',
+        rating: 5,
+        isFavorite: true,
+        isBookmarked: true,
+        image: 'https://images.unsplash.com/photo-1525351484163-7529414344d8?auto=format&fit=crop&w=900&q=85',
+        notes: '周末早午餐标配！恰巴塔用黄油煎出焦边，黑胡椒现磨才够香。',
+        ingredients: [
+          { id: 'i1', name: '恰巴塔欧包', amount: 2, unit: '片' },
+          { id: 'i2', name: '熟牛油果', amount: 1, unit: '颗' },
+          { id: 'i3', name: '可生食鸡蛋', amount: 2, unit: '个' }
+        ],
+        steps: [
+          {
+            id: 'st11',
+            stage: '热锅爆香',
+            heat: '小火',
+            durationSec: 90,
+            seasonings: ['无盐黄油 10克'],
+            instruction: '平底锅小火融化黄油，放入欧包切片双面各煎45秒至金黄酥脆。',
+            tip: '切面呈金黄网格焦纹最香'
+          },
+          {
+            id: 'st12',
+            stage: '焯水去腥',
+            heat: '小火',
+            durationSec: 180,
+            seasonings: ['白醋 1勺', '海盐黑胡椒 2克'],
+            instruction: '牛油果压泥抹在面包上；水微沸加白醋搅出漩涡，滑入鸡蛋小火焖煮3分钟捞出铺在顶部即可。',
+            tip: '水不能大滚，保持虾眼泡才不会冲散蛋白'
+          }
+        ],
+        cookingLogs: []
+      }
+    ];
+
+    const STORAGE_KEY = 'INSTAKITCHEN_RECIPES_V1';
+
+    function InstaKitchenApp() {
+      // 从 iPhone 本地存储读取菜谱数据
+      const [recipes, setRecipes] = useState(() => {
+        try {
+          const saved = localStorage.getItem(STORAGE_KEY);
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+          }
+        } catch (e) {}
+        return INITIAL_RECIPES;
+      });
+
+      // 每次修改自动持久化保存到 iPhone 本地
+      useEffect(() => {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(recipes));
+        } catch (e) {}
+      }, [recipes]);
+
+      const [darkMode, setDarkMode] = useState(false);
+      const [selectedCategory, setSelectedCategory] = useState('全部');
+      const [searchText, setSearchText] = useState('');
+      const [activeTab, setActiveTab] = useState('feed'); // 'feed' | 'grid' | 'saved'
+      const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
+
+      const [activeRecipeId, setActiveRecipeId] = useState(null);
+      const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+      const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
+      const [heartBurstId, setHeartBurstId] = useState(null);
+
+      // 详情页状态
+      const [portionMultiplier, setPortionMultiplier] = useState(1);
+      const [checkedIngredients, setCheckedIngredients] = useState({});
+      const [completedSteps, setCompletedSteps] = useState({});
+      const [stepTimers, setStepTimers] = useState({});
+      const [checkedGroceryItems, setCheckedGroceryItems] = useState({});
+
+      // 打卡状态
+      const [newLogNote, setNewLogNote] = useState('');
+      const [newLogBadge, setNewLogBadge] = useState('完美复刻');
+
+      // 备份文本状态
+      const [backupJsonText, setBackupJsonText] = useState('');
+      const [backupToast, setBackupToast] = useState('');
+
+      // 新建菜谱表单状态
+      const [newTitle, setNewTitle] = useState('');
+      const [newCategory, setNewCategory] = useState('肉类');
+      const [newPrepTime, setNewPrepTime] = useState(25);
+      const [newNotes, setNewNotes] = useState('');
+      const [newPhoto, setNewPhoto] = useState('https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=900&q=85');
+      const [newIngredients, setNewIngredients] = useState([
+        { id: 'ni1', name: '主食材', amount: 500, unit: '克' }
+      ]);
+      const [ingNameInput, setIngNameInput] = useState('');
+      const [ingAmountInput, setIngAmountInput] = useState('');
+      const [ingUnitInput, setIngUnitInput] = useState('克');
+
+      const [newSteps, setNewSteps] = useState([]);
+      const [stepStage, setStepStage] = useState('焯水去腥');
+      const [stepHeat, setStepHeat] = useState('大火');
+      const [stepDuration, setStepDuration] = useState('120');
+      const [stepSeasonings, setStepSeasonings] = useState([]);
+      const [customSeaName, setCustomSeaName] = useState('');
+      const [customSeaQty, setCustomSeaQty] = useState('');
+      const [stepInstruction, setStepInstruction] = useState('');
+      const [stepTip, setStepTip] = useState('');
+
+      const fileInputRef = useRef(null);
+
+      // 秒表倒计时器
+      useEffect(() => {
+        const timer = setInterval(() => {
+          setStepTimers((prev) => {
+            let changed = false;
+            const next = { ...prev };
+            Object.keys(next).forEach((k) => {
+              if (next[k].running && next[k].remaining > 0) {
+                changed = true;
+                const rem = next[k].remaining - 1;
+                next[k] = { ...next[k], remaining: rem, running: rem > 0 };
+              }
+            });
+            return changed ? next : prev;
+          });
+        }, 1000);
+        return () => clearInterval(timer);
+      }, []);
+
+      const toggleStepTimer = (stepKey, defaultSeconds, meta = {}) => {
+        setStepTimers((prev) => {
+          const cur = prev[stepKey] || {
+            remaining: defaultSeconds,
+            running: false,
+            total: defaultSeconds,
+            recipeTitle: meta.recipeTitle || '菜谱',
+            stage: meta.stage || '计时',
+            recipeId: meta.recipeId
+          };
+          const rem = cur.remaining === 0 ? defaultSeconds : cur.remaining;
+          return {
+            ...prev,
+            [stepKey]: { ...cur, remaining: rem, running: !cur.running }
+          };
+        });
+      };
+
+      const formatTimer = (sec) => {
+        const m = Math.floor(sec / 60);
+        const s = sec % 60;
+        return m > 0 ? `${m}分${s < 10 ? '0' : ''}${s}秒` : `${s}秒`;
+      };
+
+      // 顶部悬浮灵动岛计时状态
+      const activeLiveTimer = useMemo(() => {
+        const entries = Object.entries(stepTimers);
+        const running = entries.find(([, v]) => v.running && v.remaining > 0);
+        if (running) return { key: running[0], ...running[1] };
+        return null;
+      }, [stepTimers]);
+
+      // 跨菜谱自动合并买菜清单
+      const mergedGroceryList = useMemo(() => {
+        const bookmarked = recipes.filter((r) => r.isBookmarked);
+        const map = {};
+        bookmarked.forEach((r) => {
+          (r.ingredients || []).forEach((ing) => {
+            const key = `${ing.name.trim()}_${ing.unit.trim()}`;
+            if (!map[key]) {
+              map[key] = { key, name: ing.name.trim(), unit: ing.unit.trim(), totalAmount: 0, fromRecipes: [] };
+            }
+            map[key].totalAmount = Math.round((map[key].totalAmount + Number(ing.amount || 0)) * 10) / 10;
+            if (!map[key].fromRecipes.includes(r.title)) map[key].fromRecipes.push(r.title);
+          });
+        });
+        return Object.values(map);
+      }, [recipes]);
+
+      // 处理 iPhone 拍照或从相册选图并压缩为 Base64
+      const handlePhotoUpload = (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const maxDim = 800;
+            let w = img.width;
+            let h = img.height;
+            if (w > h && w > maxDim) {
+              h = Math.round((h * maxDim) / w);
+              w = maxDim;
+            } else if (h > maxDim) {
+              w = Math.round((w * maxDim) / h);
+              h = maxDim;
+            }
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, w, h);
+            setNewPhoto(canvas.toDataURL('image/jpeg', 0.78));
+          };
+          img.src = event.target.result;
+        };
+        reader.readAsDataURL(file);
+      };
+
+      const activeRecipe = useMemo(
+        () => recipes.find((r) => r.id === activeRecipeId) || null,
+        [recipes, activeRecipeId]
+      );
+
+      const filteredRecipes = useMemo(() => {
+        return recipes.filter((r) => {
+          const matchCat = selectedCategory === '全部' || r.category === selectedCategory;
+          const matchFav = !showFavoritesOnly || r.isFavorite;
+          const q = searchText.trim().toLowerCase().replace(/^#/, '');
+          const matchSearch =
+            !q ||
+            r.title.toLowerCase().includes(q) ||
+            (r.ingredients || []).some((i) => i.name.toLowerCase().includes(q));
+          return matchCat && matchFav && matchSearch;
+        });
+      }, [recipes, selectedCategory, showFavoritesOnly, searchText]);
+
+      const handleDoubleTapLike = (id) => {
+        setRecipes((prev) => prev.map((r) => (r.id === id ? { ...r, isFavorite: true } : r)));
+        setHeartBurstId(id);
+        setTimeout(() => setHeartBurstId(null), 800);
+      };
+
+      const handleSaveStepItem = () => {
+        if (!stepInstruction.trim()) return;
+        setNewSteps([
+          ...newSteps,
+          {
+            id: 'ns_' + Date.now(),
+            stage: stepStage,
+            heat: stepHeat,
+            durationSec: Number(stepDuration) || 0,
+            seasonings: [...stepSeasonings],
+            instruction: stepInstruction.trim(),
+            tip: stepTip.trim()
+          }
+        ]);
+        setStepInstruction('');
+        setStepTip('');
+        setStepSeasonings([]);
+      };
+
+      const handleCreateRecipe = () => {
+        if (!newTitle.trim()) return;
+        const created = {
+          id: 'r_' + Date.now(),
+          title: newTitle.trim(),
+          category: newCategory,
+          prepTime: Number(newPrepTime) || 20,
+          difficulty: '适中',
+          rating: 5,
+          isFavorite: false,
+          isBookmarked: true,
+          image: newPhoto,
+          notes: newNotes.trim() || '自家私房配方记录 ✨',
+          ingredients: newIngredients,
+          steps:
+            newSteps.length > 0
+              ? newSteps
+              : [
+                  {
+                    id: 'def_1',
+                    stage: '调味翻炒',
+                    heat: '大火',
+                    durationSec: 120,
+                    seasonings: ['盐 3克', '生抽 1勺'],
+                    instruction: '食材下锅大火翻炒调味即可出锅。',
+                    tip: ''
+                  }
+                ],
+          cookingLogs: [
+            {
+              id: 'log_' + Date.now(),
+              date: new Date().toISOString().slice(0, 10),
+              attempt: 1,
+              rating: 5,
+              note: '首次录入私房菜谱建档！',
+              badge: '首锅建档'
+            }
+          ]
+        };
+        setRecipes([created, ...recipes]);
+        setNewTitle('');
+        setNewNotes('');
+        setNewSteps([]);
+        setIsAddModalOpen(false);
+      };
+
+      const bgMain = darkMode ? 'bg-black text-zinc-100' : 'bg-white text-zinc-900';
+      const bgSecondary = darkMode ? 'bg-zinc-900 text-zinc-100' : 'bg-zinc-100 text-zinc-900';
+      const borderCol = darkMode ? 'border-zinc-800' : 'border-zinc-200';
+      const textMuted = darkMode ? 'text-zinc-400' : 'text-zinc-500';
+
+      return (
+        <div className={`min-h-screen max-w-md mx-auto flex flex-col ${bgMain} relative pb-16`}>
+          {/* 顶部灵动岛实时倒计时悬浮横幅 */}
+          {activeLiveTimer && (
+            <div className="sticky top-0 z-50 bg-black text-white px-4 py-2.5 flex items-center justify-between shadow-lg">
+              <div
+                onClick={() => activeLiveTimer.recipeId && setActiveRecipeId(activeLiveTimer.recipeId)}
+                className="flex items-center gap-2 cursor-pointer truncate"
+              >
+                <span className="w-2.5 h-2.5 rounded-full bg-orange-500 animate-ping" />
+                <span className="text-xs font-bold truncate">
+                  🔥 {activeLiveTimer.recipeTitle} · {activeLiveTimer.stage}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-mono font-extrabold text-amber-400">
+                  {formatTimer(activeLiveTimer.remaining)}
+                </span>
+                <button
+                  onClick={() => toggleStepTimer(activeLiveTimer.key, activeLiveTimer.total)}
+                  className="px-2 py-0.5 rounded bg-white/20 text-xs font-bold"
+                >
+                  暂停
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ==================== 主页视图 ==================== */}
+          {!activeRecipe && (
+            <>
+              {/* Instagram 顶部栏 */}
+              <div className={`sticky top-0 z-30 safe-top-pad px-4 pb-2.5 flex items-center justify-between border-b ${borderCol} ${bgMain}/95 backdrop-blur-md`}>
+                <div className="flex items-center gap-2">
+                  <span className="font-serif italic font-bold text-2xl tracking-tight">InstaKitchen</span>
+                  {showFavoritesOnly && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-500 font-bold">
+                      仅看最爱
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-4 text-lg">
+                  <button onClick={() => setDarkMode(!darkMode)} title="切换深浅色">
+                    {darkMode ? '☀️' : '🌙'}
+                  </button>
+                  <button onClick={() => setIsAddModalOpen(true)} className="font-bold text-xl">
+                    ➕
+                  </button>
+                  <button onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}>
+                    {showFavoritesOnly ? '❤️' : '🤍'}
+                  </button>
+                </div>
+              </div>
+
+              {/* 个人厨房主页头部 */}
+              <div className={`px-4 pt-4 pb-3 border-b ${borderCol}`}>
+                <div className="flex items-center gap-5">
+                  <div className="p-[2.5px] rounded-full bg-gradient-to-tr from-[#FEDA75] via-[#D62976] to-[#4F5BD5]">
+                    <div className={`p-0.5 rounded-full ${bgMain}`}>
+                      <img
+                        src="https://images.unsplash.com/photo-1556910103-1c02745aae4d?auto=format&fit=crop&w=240&q=80"
+                        className="w-16 h-16 rounded-full object-cover"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex-1 flex justify-around text-center">
+                    <button onClick={() => { setShowFavoritesOnly(false); setActiveTab('feed'); }}>
+                      <div className="font-bold text-base">{recipes.length}</div>
+                      <div className={`text-[11px] ${textMuted}`}>私房菜谱</div>
+                    </button>
+                    <button onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}>
+                      <div className="font-bold text-base text-rose-500">
+                        {recipes.filter((r) => r.isFavorite).length}
+                      </div>
+                      <div className={`text-[11px] ${textMuted}`}>最爱拿手</div>
+                    </button>
+                    <button onClick={() => setActiveTab('saved')}>
+                      <div className="font-bold text-base text-[#0095F6]">
+                        {recipes.filter((r) => r.isBookmarked).length}
+                      </div>
+                      <div className={`text-[11px] ${textMuted}`}>待买待做</div>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-2.5 text-xs font-bold">我的独立料理手账 🍳 (数据已自动保存在本机)</div>
+                <div className="mt-2.5 flex gap-2">
+                  <button
+                    onClick={() => {
+                      setBackupJsonText(JSON.stringify(recipes, null, 2));
+                      setBackupToast('');
+                      setIsBackupModalOpen(true);
+                    }}
+                    className={`flex-1 py-1.5 rounded-lg border ${borderCol} ${bgSecondary} text-xs font-semibold`}
+                  >
+                    📦 备份 / 恢复数据 (JSON)
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('saved')}
+                    className="py-1.5 px-3 rounded-lg bg-[#0095F6] text-white text-xs font-semibold"
+                  >
+                    🛒 买菜清单 ({mergedGroceryList.length})
+                  </button>
+                </div>
+              </div>
+
+              {/* 搜索栏 */}
+              <div className="px-3.5 pt-3 pb-1">
+                <input
+                  type="text"
+                  value={searchText}
+                  onChange={(e) => setSearchText(e.target.value)}
+                  placeholder="🔍 搜索菜名或 #食材标签..."
+                  className={`w-full px-3.5 py-2 rounded-xl text-xs ${bgSecondary} focus:outline-none`}
+                />
+              </div>
+
+              {/* Stories 快拍分类栏 */}
+              <div className={`px-3 py-3 flex items-center gap-3.5 overflow-x-auto no-scrollbar border-b ${borderCol}`}>
+                {CATEGORIES.map((cat) => {
+                  const isSel = selectedCategory === cat.name;
+                  return (
+                    <button
+                      key={cat.name}
+                      onClick={() => setSelectedCategory(cat.name)}
+                      className="flex flex-col items-center gap-1 flex-shrink-0"
+                    >
+                      <div
+                        className={`p-[2.5px] rounded-full ${
+                          isSel
+                            ? 'bg-gradient-to-tr from-[#FEDA75] via-[#D62976] to-[#962FBF]'
+                            : 'bg-zinc-300 dark:bg-zinc-700'
+                        }`}
+                      >
+                        <div className={`p-[2px] rounded-full ${bgMain}`}>
+                          <div className="w-14 h-14 rounded-full overflow-hidden relative flex items-center justify-center">
+                            <img src={cat.img} className="w-full h-full object-cover" />
+                            <div className="absolute inset-0 bg-black/25 flex items-center justify-center text-lg">
+                              {cat.icon}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <span className={`text-[11px] ${isSel ? 'font-bold' : textMuted}`}>{cat.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* 视图模式切换栏 */}
+              <div className={`grid grid-cols-3 border-b ${borderCol} text-xs font-bold`}>
+                <button
+                  onClick={() => setActiveTab('feed')}
+                  className={`py-2.5 border-b-2 ${activeTab === 'feed' ? 'border-current' : `border-transparent ${textMuted}`}`}
+                >
+                  📋 动态流
+                </button>
+                <button
+                  onClick={() => setActiveTab('grid')}
+                  className={`py-2.5 border-b-2 ${activeTab === 'grid' ? 'border-current' : `border-transparent ${textMuted}`}`}
+                >
+                  🖼️ 照片墙
+                </button>
+                <button
+                  onClick={() => setActiveTab('saved')}
+                  className={`py-2.5 border-b-2 ${activeTab === 'saved' ? 'border-current' : `border-transparent ${textMuted}`}`}
+                >
+                  🛒 采购单 ({mergedGroceryList.length})
+                </button>
+              </div>
+
+              {/* 内容列表 */}
+              {activeTab === 'saved' ? (
+                <div className="p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold">🛍️ 已自动合并待买食材总量（点一下划掉）：</span>
+                    <button
+                      onClick={() => setCheckedGroceryItems({})}
+                      className="text-xs text-[#0095F6] font-semibold"
+                    >
+                      重置打勾
+                    </button>
+                  </div>
+                  {mergedGroceryList.length === 0 ? (
+                    <div className={`py-12 text-center text-xs ${textMuted}`}>
+                      点击任意菜谱右下角的「🔖 书签」图标，即可把食材汇总到这里
+                    </div>
+                  ) : (
+                    mergedGroceryList.map((item) => {
+                      const bought = !!checkedGroceryItems[item.key];
+                      return (
+                        <button
+                          key={item.key}
+                          onClick={() => setCheckedGroceryItems((p) => ({ ...p, [item.key]: !bought }))}
+                          className={`w-full p-3 rounded-xl border ${borderCol} flex items-center justify-between text-left ${
+                            bought ? 'opacity-45' : bgSecondary
+                          }`}
+                        >
+                          <div>
+                            <div className={`text-xs font-bold ${bought ? 'line-through' : ''}`}>
+                              {bought ? '✅ ' : '⬜ '} {item.name}
+                            </div>
+                            <div className={`text-[10px] ${textMuted} mt-0.5`}>
+                              用于：{item.fromRecipes.join(' + ')}
+                            </div>
+                          </div>
+                          <span className="text-xs font-extrabold text-[#0095F6]">
+                            {item.totalAmount} {item.unit}
+                          </span>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              ) : activeTab === 'grid' ? (
+                <div className="grid grid-cols-3 gap-[1.5px] pt-[1.5px]">
+                  {filteredRecipes.map((r) => (
+                    <button
+                      key={r.id}
+                      onClick={() => setActiveRecipeId(r.id)}
+                      className="relative aspect-square overflow-hidden bg-zinc-900"
+                    >
+                      <img src={r.image} className="w-full h-full object-cover" />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-transparent to-transparent" />
+                      <div className="absolute bottom-1.5 left-1.5 right-1.5 text-left text-[11px] font-bold text-white truncate">
+                        {r.title}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
+                  {filteredRecipes.map((recipe) => (
+                    <div key={recipe.id} className="pb-4">
+                      <div className="px-3.5 py-2.5 flex items-center justify-between">
+                        <div onClick={() => setActiveRecipeId(recipe.id)} className="cursor-pointer">
+                          <div className="text-xs font-bold flex items-center gap-1.5">
+                            <span>{recipe.title}</span>
+                            {(recipe.cookingLogs?.length || 0) > 0 && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-500/15 text-orange-500 font-bold">
+                                🔥已刷锅{recipe.cookingLogs.length}次
+                              </span>
+                            )}
+                          </div>
+                          <div className={`text-[10px] ${textMuted}`}>
+                            {recipe.category} • ⏱ {recipe.prepTime}分钟 • {recipe.steps.length}步工序
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => setRecipes(recipes.filter((r) => r.id !== recipe.id))}
+                          className={`text-xs ${textMuted} px-2`}
+                        >
+                          删除
+                        </button>
+                      </div>
+
+                      <div
+                        onDoubleClick={() => handleDoubleTapLike(recipe.id)}
+                        onClick={() => setActiveRecipeId(recipe.id)}
+                        className="relative aspect-square w-full bg-zinc-900 overflow-hidden cursor-pointer"
+                      >
+                        <img src={recipe.image} className="w-full h-full object-cover" />
+                        {heartBurstId === recipe.id && (
+                          <div className="absolute inset-0 flex items-center justify-center text-7xl animate-ping">
+                            ❤️
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="px-3.5 pt-2.5 pb-1.5 flex items-center justify-between text-xl">
+                        <div className="flex items-center gap-4">
+                          <button
+                            onClick={() =>
+                              setRecipes(recipes.map((r) => (r.id === recipe.id ? { ...r, isFavorite: !r.isFavorite } : r)))
+                            }
+                          >
+                            {recipe.isFavorite ? '❤️' : '🤍'}
+                          </button>
+                          <button onClick={() => setActiveRecipeId(recipe.id)} className="text-sm font-bold text-[#0095F6]">
+                            🍳 点此看详细步骤与配比 →
+                          </button>
+                        </div>
+                        <button
+                          onClick={() =>
+                            setRecipes(recipes.map((r) => (r.id === recipe.id ? { ...r, isBookmarked: !r.isBookmarked } : r)))
+                          }
+                        >
+                          {recipe.isBookmarked ? '🔖' : '➕🛒'}
+                        </button>
+                      </div>
+
+                      <div className="px-3.5 space-y-1 text-xs">
+                        <p>
+                          <span className="font-bold mr-1.5">my_kitchen</span>
+                          {recipe.notes}
+                        </p>
+                        <div className="flex flex-wrap gap-1.5 pt-0.5 text-[#00376B] dark:text-sky-400 font-medium">
+                          {(recipe.ingredients || []).map((ing) => (
+                            <span key={ing.id}>
+                              #{ing.name}
+                              {ing.amount}
+                              {ing.unit}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* ==================== 菜谱详情与专注下厨视图 ==================== */}
+          {activeRecipe && (
+            <div className="flex-1 flex flex-col">
+              <div className={`sticky top-0 z-30 safe-top-pad px-4 pb-2.5 flex items-center justify-between border-b ${borderCol} ${bgMain}/95 backdrop-blur-md`}>
+                <button onClick={() => setActiveRecipeId(null)} className="text-sm font-bold text-[#0095F6]">
+                  ← 返回主页
+                </button>
+                <span className="text-xs font-bold truncate max-w-[180px]">{activeRecipe.title}</span>
+                <span className="w-10" />
+              </div>
+
+              <div className="relative h-56 w-full bg-zinc-900">
+                <img src={activeRecipe.image} className="w-full h-full object-cover" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-transparent" />
+                <div className="absolute bottom-3 left-4 right-4 text-white">
+                  <div className="text-xs opacity-90">{activeRecipe.category} • ⏱ {activeRecipe.prepTime} 分钟</div>
+                  <h1 className="text-xl font-bold">{activeRecipe.title}</h1>
+                </div>
+              </div>
+
+              <div className="p-4 space-y-5">
+                {/* 1. 食材准备与分量倍增 */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold">🥗 食材清单 (点击划掉)</h3>
+                    <div className="flex gap-1">
+                      {[1, 2, 3, 4].map((m) => (
+                        <button
+                          key={m}
+                          onClick={() => setPortionMultiplier(m)}
+                          className={`px-2 py-0.5 rounded text-xs font-bold ${
+                            portionMultiplier === m ? 'bg-[#0095F6] text-white' : bgSecondary
+                          }`}
+                        >
+                          {m}x
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {(activeRecipe.ingredients || []).map((ing) => {
+                    const k = `${activeRecipe.id}_${ing.id}`;
+                    const checked = !!checkedIngredients[k];
+                    return (
+                      <button
+                        key={ing.id}
+                        onClick={() => setCheckedIngredients((p) => ({ ...p, [k]: !checked }))}
+                        className={`w-full px-3 py-2 rounded-xl border ${borderCol} flex justify-between text-xs ${
+                          checked ? 'opacity-45 line-through' : bgSecondary
+                        }`}
+                      >
+                        <span>
+                          {checked ? '✅ ' : '⬜ '} {ing.name}
+                        </span>
+                        <span className="font-bold text-[#0095F6]">
+                          {Math.round(ing.amount * portionMultiplier * 10) / 10} {ing.unit}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* 2. 分步详细制作工序 */}
+                <div className="space-y-3">
+                  <h3 className="text-sm font-bold">🍳 详细制作工序 ({activeRecipe.steps.length}步)</h3>
+                  {activeRecipe.steps.map((st, idx) => {
+                    const stepKey = `${activeRecipe.id}_st_${idx}`;
+                    const isDone = !!completedSteps[stepKey];
+                    const tState = stepTimers[stepKey] || { remaining: st.durationSec || 0, running: false };
+                    return (
+                      <div
+                        key={st.id || idx}
+                        className={`p-3.5 rounded-2xl border ${borderCol} ${isDone ? 'opacity-50' : bgSecondary} space-y-2`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <button
+                            onClick={() => setCompletedSteps((p) => ({ ...p, [stepKey]: !isDone }))}
+                            className="flex items-center gap-1.5 text-xs font-bold"
+                          >
+                            <span className="w-5 h-5 rounded-full bg-[#0095F6] text-white flex items-center justify-center text-[11px]">
+                              {isDone ? '✓' : idx + 1}
+                            </span>
+                            <span className="px-2 py-0.5 rounded bg-blue-500/15 text-blue-500">{st.stage}</span>
+                            <span className="px-2 py-0.5 rounded bg-orange-500/15 text-orange-500">🔥{st.heat}</span>
+                          </button>
+
+                          {st.durationSec > 0 && (
+                            <button
+                              onClick={() =>
+                                toggleStepTimer(stepKey, st.durationSec, {
+                                  recipeTitle: activeRecipe.title,
+                                  stage: st.stage,
+                                  recipeId: activeRecipe.id
+                                })
+                              }
+                              className={`px-2.5 py-1 rounded-full text-xs font-bold ${
+                                tState.running ? 'bg-rose-500 text-white animate-pulse' : 'bg-pink-500/15 text-pink-500'
+                              }`}
+                            >
+                              ⏱ {tState.running ? `计时中 ${formatTimer(tState.remaining)}` : `${ formatTimer(tState.remaining)} 计时`}
+                            </button>
+                          )}
+                        </div>
+
+                        {(st.seasonings || []).length > 0 && (
+                          <div className="flex flex-wrap gap-1">
+                            <span className={`text-[11px] ${textMuted}`}>🧂本步投料:</span>
+                            {st.seasonings.map((sea, sIdx) => (
+                              <span key={sIdx} className="text-[11px] px-2 py-0.5 rounded-full bg-blue-500/15 text-[#0095F6] font-bold">
+                                +{sea}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        <p className={`text-xs leading-relaxed ${isDone ? 'line-through' : ''}`}>{st.instruction}</p>
+                        {st.tip && (
+                          <div className="p-2 rounded-xl bg-amber-500/10 text-amber-600 text-[11px]">💡 {st.tip}</div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* 3. 历次试做打卡时间轴 */}
+                <div className="space-y-2.5 pt-2">
+                  <h3 className="text-sm font-bold">📈 历次试做打卡复盘 (已刷锅 {activeRecipe.cookingLogs?.length || 0} 次)</h3>
+                  <div className={`p-3 rounded-2xl border ${borderCol} ${bgSecondary} space-y-2`}>
+                    <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
+                      {['完美复刻', '火候微调', '盐味偏淡', '大厨水准'].map((b) => (
+                        <button
+                          key={b}
+                          onClick={() => setNewLogBadge(b)}
+                          className={`text-[11px] px-2.5 py-0.5 rounded-full whitespace-nowrap ${
+                            newLogBadge === b ? 'bg-pink-500 text-white font-bold' : borderCol
+                          }`}
+                        >
+                          #{b}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={newLogNote}
+                        onChange={(e) => setNewLogNote(e.target.value)}
+                        placeholder="记录本次做饭的火候或咸淡改进心得..."
+                        className={`flex-1 px-3 py-1.5 rounded-xl border ${borderCol} ${bgMain} text-xs`}
+                      />
+                      <button
+                        onClick={() => {
+                          if (!newLogNote.trim()) return;
+                          const today = new Date().toISOString().slice(0, 10);
+                          setRecipes((prev) =>
+                            prev.map((r) =>
+                              r.id === activeRecipe.id
+                                ? {
+                                    ...r,
+                                    cookingLogs: [
+                                      {
+                                        id: 'l_' + Date.now(),
+                                        date: today,
+                                        attempt: (r.cookingLogs?.length || 0) + 1,
+                                        rating: 5,
+                                        note: newLogNote.trim(),
+                                        badge: newLogBadge
+                                      },
+                                      ...(r.cookingLogs || [])
+                                    ]
+                                  }
+                                : r
+                            )
+                          );
+                          setNewLogNote('');
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-[#0095F6] text-white text-xs font-bold"
+                      >
+                        打卡
+                      </button>
+                    </div>
+                  </div>
+
+                  {(activeRecipe.cookingLogs || []).map((log) => (
+                    <div key={log.id} className={`p-3 rounded-xl border ${borderCol} ${bgSecondary} text-xs space-y-1`}>
+                      <div className="flex justify-between">
+                        <span className="font-bold text-orange-500">
+                          第 {log.attempt} 次做 · {log.date} · #{log.badge}
+                        </span>
+                        <span className="text-amber-400">★★★★★</span>
+                      </div>
+                      <p>{log.note}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ==================== 发布新私房菜弹窗 (支持 iPhone 拍照/相册选图) ==================== */}
+          {isAddModalOpen && (
+            <div className={`fixed inset-0 z-50 flex flex-col ${bgMain} overflow-y-auto pb-16`}>
+              <div className={`sticky top-0 z-20 safe-top-pad px-4 pb-3 flex items-center justify-between border-b ${borderCol} ${bgMain}`}>
+                <button onClick={() => setIsAddModalOpen(false)} className="text-xs font-semibold">
+                  取消
+                </button>
+                <span className="text-sm font-bold">发布新私房菜</span>
+                <button
+                  onClick={handleCreateRecipe}
+                  disabled={!newTitle.trim()}
+                  className="text-xs font-bold text-[#0095F6] disabled:opacity-40"
+                >
+                  分享发布
+                </button>
+              </div>
+
+              <div className="p-4 space-y-4 text-xs">
+                {/* 1. 真机拍照或从相册上传成品图 */}
+                <div className="space-y-2">
+                  <label className="font-bold block">1. 上传美食成品图（支持手机相册/拍照）</label>
+                  <div className="flex items-center gap-3">
+                    <img src={newPhoto} className="w-20 h-20 rounded-xl object-cover border" />
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handlePhotoUpload}
+                      className="hidden"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="px-4 py-2.5 rounded-xl bg-[#0095F6] text-white font-bold"
+                    >
+                      📸 从手机相册选图 / 拍照
+                    </button>
+                  </div>
+                </div>
+
+                {/* 2. 菜名与分类 */}
+                <div className="space-y-2">
+                  <label className="font-bold block">2. 菜名与分类</label>
+                  <input
+                    type="text"
+                    value={newTitle}
+                    onChange={(e) => setNewTitle(e.target.value)}
+                    placeholder="输入菜名（如：外婆红烧肉）"
+                    className={`w-full px-3 py-2.5 rounded-xl border ${borderCol} ${bgSecondary}`}
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <select
+                      value={newCategory}
+                      onChange={(e) => setNewCategory(e.target.value)}
+                      className={`px-3 py-2 rounded-xl border ${borderCol} ${bgSecondary}`}
+                    >
+                      {CATEGORIES.filter((c) => c.name !== '全部').map((c) => (
+                        <option key={c.name} value={c.name}>
+                          分类：{c.name}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="number"
+                      value={newPrepTime}
+                      onChange={(e) => setNewPrepTime(e.target.value)}
+                      placeholder="耗时(分钟)"
+                      className={`px-3 py-2 rounded-xl border ${borderCol} ${bgSecondary}`}
+                    />
+                  </div>
+                </div>
+
+                {/* 3. 添加总食材 */}
+                <div className="space-y-2">
+                  <label className="font-bold block">3. 食材清单</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {newIngredients.map((item) => (
+                      <span
+                        key={item.id}
+                        className="px-2.5 py-1 rounded-full bg-blue-500/15 text-[#0095F6] font-bold flex items-center gap-1"
+                      >
+                        #{item.name} {item.amount}
+                        {item.unit}
+                        <button onClick={() => setNewIngredients(newIngredients.filter((i) => i.id !== item.id))}>
+                          ✕
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                  <div className="flex gap-1.5">
+                    <input
+                      type="text"
+                      value={ingNameInput}
+                      onChange={(e) => setIngNameInput(e.target.value)}
+                      placeholder="食材名"
+                      className={`flex-1 px-2.5 py-2 rounded-xl border ${borderCol} ${bgSecondary}`}
+                    />
+                    <input
+                      type="number"
+                      value={ingAmountInput}
+                      onChange={(e) => setIngAmountInput(e.target.value)}
+                      placeholder="量"
+                      className={`w-16 px-2 py-2 rounded-xl border ${borderCol} ${bgSecondary}`}
+                    />
+                    <input
+                      type="text"
+                      value={ingUnitInput}
+                      onChange={(e) => setIngUnitInput(e.target.value)}
+                      placeholder="单位"
+                      className={`w-14 px-2 py-2 rounded-xl border ${borderCol} ${bgSecondary}`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!ingNameInput.trim()) return;
+                        setNewIngredients([
+                          ...newIngredients,
+                          {
+                            id: 'ni_' + Date.now(),
+                            name: ingNameInput.trim(),
+                            amount: Number(ingAmountInput) || 1,
+                            unit: ingUnitInput || '克'
+                          }
+                        ]);
+                        setIngNameInput('');
+                        setIngAmountInput('');
+                      }}
+                      className="px-3.5 rounded-xl bg-[#0095F6] text-white font-bold"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+
+                {/* 4. 结构化制作步骤详解 */}
+                <div className="space-y-2.5">
+                  <label className="font-bold block">4. 分步详细制作工序 (焯水/加调料/火候)</label>
+                  {newSteps.map((st, idx) => (
+                    <div key={st.id} className={`p-2.5 rounded-xl border ${borderCol} ${bgSecondary} space-y-1`}>
+                      <div className="flex justify-between font-bold">
+                        <span>
+                          第{idx + 1}步：【{st.stage}】· 🔥{st.heat} · ⏱{st.durationSec}秒
+                        </span>
+                        <button
+                          onClick={() => setNewSteps(newSteps.filter((_, i) => i !== idx))}
+                          className="text-rose-500"
+                        >
+                          删除
+                        </button>
+                      </div>
+                      {st.seasonings.length > 0 && (
+                        <div className="text-[#0095F6]">投料：{st.seasonings.join('、')}</div>
+                      )}
+                      <div>{st.instruction}</div>
+                    </div>
+                  ))}
+
+                  <div className={`p-3 rounded-2xl border-2 border-dashed ${borderCol} space-y-2.5`}>
+                    <div className="font-bold text-[#0095F6]">➕ 编写第 {newSteps.length + 1} 步工序：</div>
+                    <div className="flex flex-wrap gap-1">
+                      {STEP_STAGES.map((s) => (
+                        <button
+                          key={s.value}
+                          type="button"
+                          onClick={() => setStepStage(s.value)}
+                          className={`px-2 py-1 rounded-lg text-[11px] font-bold border ${
+                            stepStage === s.value ? 'bg-pink-500 text-white border-pink-500' : borderCol
+                          }`}
+                        >
+                          {s.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <select
+                        value={stepHeat}
+                        onChange={(e) => setStepHeat(e.target.value)}
+                        className={`px-2.5 py-1.5 rounded-xl border ${borderCol} ${bgSecondary}`}
+                      >
+                        {HEAT_LEVELS.map((h) => (
+                          <option key={h.value} value={h.value}>
+                            {h.label}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        type="number"
+                        value={stepDuration}
+                        onChange={(e) => setStepDuration(e.target.value)}
+                        placeholder="本步读秒(如120)"
+                        className={`px-2.5 py-1.5 rounded-xl border ${borderCol} ${bgSecondary}`}
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <div className={textMuted}>点选本步放入的调料：</div>
+                      <div className="flex flex-wrap gap-1">
+                        {QUICK_SEASONINGS.map((qs) => {
+                          const label = `${qs.name} ${qs.amount}`;
+                          const sel = stepSeasonings.includes(label);
+                          return (
+                            <button
+                              key={label}
+                              type="button"
+                              onClick={() =>
+                                setStepSeasonings(
+                                  sel ? stepSeasonings.filter((x) => x !== label) : [...stepSeasonings, label]
+                                )
+                              }
+                              className={`px-2 py-0.5 rounded-full text-[11px] border ${
+                                sel ? 'bg-[#0095F6] text-white border-[#0095F6]' : borderCol
+                              }`}
+                            >
+                              +{label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <textarea
+                      rows={3}
+                      value={stepInstruction}
+                      onChange={(e) => setStepInstruction(e.target.value)}
+                      placeholder="详细操作描述：例如冷水下锅加姜片料酒，大火煮3分钟撇去浮沫..."
+                      className={`w-full p-2.5 rounded-xl border ${borderCol} ${bgSecondary}`}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleSaveStepItem}
+                      className="w-full py-2 rounded-xl bg-[#0095F6] text-white font-bold"
+                    >
+                      + 保存并添加为第 {newSteps.length + 1} 步
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ==================== JSON 备份与恢复弹窗 ==================== */}
+          {isBackupModalOpen && (
+            <div className={`fixed inset-0 z-50 flex flex-col ${bgMain} p-4 safe-top-pad`}>
+              <div className="flex justify-between items-center pb-3 border-b">
+                <button onClick={() => setIsBackupModalOpen(false)} className="text-xs font-bold">
+                  关闭
+                </button>
+                <span className="text-sm font-bold">📦 备份与恢复菜谱 (JSON)</span>
+                <span className="w-8" />
+              </div>
+              <div className="py-3 space-y-3 text-xs flex-1 flex flex-col">
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      navigator.clipboard?.writeText(backupJsonText);
+                      setBackupToast('✅ 已复制全部菜谱 JSON 到剪贴板，可粘贴存到备忘录！');
+                    }}
+                    className="flex-1 py-2.5 rounded-xl bg-[#0095F6] text-white font-bold"
+                  >
+                    复制全部备份 JSON
+                  </button>
+                  <button
+                    onClick={() => {
+                      try {
+                        const parsed = JSON.parse(backupJsonText);
+                        if (Array.isArray(parsed)) {
+                          setRecipes(parsed);
+                          setBackupToast(`🎉 成功恢复 ${parsed.length} 道菜谱！`);
+                        }
+                      } catch (e) {
+                        setBackupToast('❌ JSON 格式错误');
+                      }
+                    }}
+                    className="flex-1 py-2.5 rounded-xl bg-pink-500 text-white font-bold"
+                  >
+                    从下方数据恢复
+                  </button>
+                </div>
+                {backupToast && <div className="text-emerald-500 font-bold">{backupToast}</div>}
+                <textarea
+                  value={backupJsonText}
+                  onChange={(e) => setBackupJsonText(e.target.value)}
+                  className={`w-full flex-1 p-2.5 rounded-xl border ${borderCol} ${bgSecondary} font-mono text-[10px]`}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* 底部常驻导航栏 */}
+          <div className={`fixed bottom-0 left-0 right-0 max-w-md mx-auto safe-bottom-pad pt-2.5 px-8 border-t ${borderCol} ${bgMain}/95 backdrop-blur-md flex justify-between items-center text-xl z-30`}>
+            <button onClick={() => { setActiveRecipeId(null); setActiveTab('feed'); }}>🏠</button>
+            <button onClick={() => { setActiveRecipeId(null); setActiveTab('grid'); }}>🖼️</button>
+            <button onClick={() => setIsAddModalOpen(true)}>➕</button>
+            <button onClick={() => { setActiveRecipeId(null); setActiveTab('saved'); }}>🛒</button>
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<InstaKitchenApp />);
+  </script>
+</body>
+</html>
